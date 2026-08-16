@@ -1,0 +1,124 @@
+--information:プレースホルダーを出せるカスタムオブジェクト
+--track@box_width:幅,1,7680,640,1
+--track@box_height:高さ,1,4320,360,1
+
+--group:背景,true
+--check@show_background:背景を表示,true
+--color@background_color:背景色,0x808080
+--track@background_transparency:背景の透明度,0,100,50,1
+--group
+
+--group:対角線・枠線,true
+--check@show_diagonal:対角線を表示,true
+--check@show_border:枠線を表示,true
+--track@line_width:線の太さ,0.1,100,1.5,0.1
+--color@line_color:線の色,0x666666
+--track@line_transparency:線の透明度,0,100,0,1
+--group
+
+
+
+-- 四角形の座標を計算
+local w = math.max(1, math.floor(box_width + 0.5))
+local h = math.max(1, math.floor(box_height + 0.5))
+local lw = math.max(0.1, line_width)
+
+local left = -w * 0.5
+local right = w * 0.5
+local top = -h * 0.5
+local bottom = h * 0.5
+
+-- 色および透明度を、RGBA値に変換
+local function color_components(color, opacity_percent)
+    local a = math.max(0, math.min(1, opacity_percent / 100))
+    local r = math.floor(color / 0x10000) % 0x100 / 255
+    local g = math.floor(color / 0x100) % 0x100 / 255
+    local b = color % 0x100 / 255
+    return r * a, g * a, b * a, a
+end
+
+-- 四隅の頂点
+local function vertex(x, y, r, g, b, a)
+    return {x, y, 0, r, g, b, a}
+end
+
+local function append_quad(list, x0, y0, x1, y1, x2, y2, x3, y3, r, g, b, a)
+    table.insert(list, vertex(x0, y0, r, g, b, a))
+    table.insert(list, vertex(x1, y1, r, g, b, a))
+    table.insert(list, vertex(x2, y2, r, g, b, a))
+    table.insert(list, vertex(x3, y3, r, g, b, a))
+end
+
+
+-- 線を描画
+local function append_line_quad(list, x0, y0, x1, y1, thickness, r, g, b, a)
+
+    -- 長さベクトルに伸ばす
+    local dx = x1 - x0
+    local dy = y1 - y0
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length <= 0 then return end
+
+    -- 90度回転ベクトル（太さ方向）に伸ばす    
+    local nx = -dy / length * thickness * 0.5
+    local ny = dx / length * thickness * 0.5
+
+    -- 1辺ずつの線
+    append_quad(list,
+        x0 - nx, y0 - ny,
+        x1 - nx, y1 - ny,
+        x1 + nx, y1 + ny,
+        x0 + nx, y0 + ny,
+        r, g, b, a)
+end
+
+
+-- tempbufferで描画。描画領域の設定
+obj.setoption("drawtarget", "tempbuffer", w, h)
+
+
+-- 描画（背景）
+if show_background and background_transparency < 100 then
+    local r, g, b, a = color_components(background_color, 100 - background_transparency)
+    local quads = {}
+    append_quad(quads, left, top, right, top, right, bottom, left, bottom, r, g, b, a)
+    obj.drawpoly(quads, 4)
+end
+
+-- 描画（対角線）
+if show_diagonal and line_transparency < 100 then
+    local r, g, b, a = color_components(line_color, 100 - line_transparency)
+    local quads = {}
+    append_line_quad(quads, left, top, right, bottom, lw, r, g, b, a)
+    append_line_quad(quads, right, top, left, bottom, lw, r, g, b, a)
+    obj.drawpoly(quads, 4)
+end
+
+
+-- 描画（枠線）
+if show_border and line_transparency < 100 then
+    local r, g, b, a = color_components(line_color, 100 - line_transparency)
+    local quads = {}
+
+    -- 太すぎる場合はオブジェクトの半分までに制限
+    local bw = math.min(lw, math.min(w, h) * 0.5)
+
+    append_quad(quads, left, top, right, top,
+        right, top + bw, left, top + bw, r, g, b, a)
+    append_quad(quads, left, bottom - bw, right, bottom - bw,
+        right, bottom, left, bottom, r, g, b, a)
+    append_quad(quads, left, top + bw, left + bw, top + bw,
+        left + bw, bottom - bw, left, bottom - bw, r, g, b, a)
+    append_quad(quads, right - bw, top + bw, right, top + bw,
+        right, bottom - bw, right - bw, bottom - bw, r, g, b, a)
+    obj.drawpoly(quads, 4)
+end
+
+
+-- tempbufferで描画したものをobject化
+-- 描画先をframebufferへ戻す
+obj.copybuffer("object", "tempbuffer")
+obj.setoption("drawtarget", "framebuffer")
+
+-- プレビュー画面のリサイズを禁止
+obj.setoption("focus_mode", "no_resize")
